@@ -1,52 +1,78 @@
-pipeline{
-  agent {label 'Node1'}
-  tools {
-    maven 'maven3.8.6'
-  }
- 
-  stages {
-    stage('Cloning'){
-      steps {
-        echo 'Cloning from GitHub'
-        git credentialsId: '68434448-d092-439f-add9-3fd5e3309a0b', url: 'https://github.com/johnkennedy12/web-app.git'
-        echo 'Cloning done'
-      }
+pipeline {
+    agent any
+
+    environment {
+        SONAR_TOKEN = credentials('sonarqube-token')
+        NEXUS_CREDENTIALS = credentials('nexus-credentials')
     }
-    stage('Building'){
-      steps {
-        echo "packaging our artifact"
-        sh 'mvn package'
-        echo 'Packing done'
-      }
-    }
-    stage('Testing'){
-      steps {
-        echo 'Testing with Sonarqube'
-        sh 'mvn sonar:sonar'
-        echo 'Testing done'
-      }
-    }
-    stage('Deploying'){
-      steps {
-        echo 'Deploying to nexus'
-        sh 'mvn deploy'
-        echo 'Deploying done'
-      }
-    }
-    stage('Approval'){
-      steps {
-        echo "Seeking Approval"
-        timeout(time: 5, unit: "DAYS"){
-        input message: 'Approve to production'
+
+    stages {
+        stage('Git Clone') {
+            steps {
+                // Clone the Git repository
+                git branch: 'master', url: 'https://github.com/johnkennedy12/web-app.git'
+            }
         }
-      }
+
+        stage('Maven Build') {
+            agent {
+                docker {
+                    image 'maven:3.5-jdk-8-alpine'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock'
+                }
+            }
+            steps {
+                // Build the Maven project
+                sh 'mvn clean package'
+            }
+        }
+
+        stage('Sonar Test') {
+            agent {
+                docker {
+                    image 'maven:3.5-jdk-8-alpine'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock'
+                }
+            }
+            steps {
+                // Run SonarQube analysis with credentials
+                sh "mvn sonar:sonar -Dsonar.host.url=http://172.31.93.36:9000 -Dsonar.login=${SONAR_TOKEN}"
+            }
+        }
+
+        stage('Nexus Backup') {
+            agent {
+                docker {
+                    image 'maven:3.5-jdk-8-alpine'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock'
+                }
+            }
+            steps {
+                // Deploy to Nexus with credentials
+                withCredentials([usernamePassword(credentialsId: 'nexus-credentials', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                    sh "mvn deploy -Dmaven.repo.username=${NEXUS_USER} -Dmaven.repo.password=${NEXUS_PASS}"
+                }
+            }
+        }
+
+        stage('Tomcat') {
+            agent {
+                docker {
+                    image 'tomcat:8.0.20-jre8'
+                    args '-d -p 8080:8080'
+                }
+            }
+            steps {
+                // Build and start the Docker container
+                script {
+                    def containerId = sh(returnStdout: true, script: 'docker run -d -p 8080:8080 tomcat:8.0.20-jre8')
+                    env.CONTAINER_ID = containerId.trim()
+                }
+                
+                // Copy the built WAR file to Tomcat webapps directory
+                sh "docker cp target/*.war ${env.CONTAINER_ID}:/usr/local/tomcat/webapps"
+            }
+        }
+        
     }
-    stage('Tomcat'){
-      steps {
-        echo 'Pushing to Tomcat'
-        deploy adapters: [tomcat9(credentialsId: 'Tomcat_Cred', path: '', url: 'http://44.211.199.216:8080/')], contextPath: null, onFailure: false, war: 'target/*war'
-        echo 'Done'
-      }
-    }
-  }
 }
