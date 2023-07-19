@@ -5,7 +5,9 @@ pipeline {
         stage('Git Clone') {
             steps {
                 // Clone the Git repository
-                 git branch: 'master', url: 'https://github.com/johnkennedy12/web-app.git'
+                 checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[credentialsId: 'Github', url: 'https://github.com/Nachoezra/web-app.git']])
+                sh 'mvn clean package'
+ url: 'https://github.com/johnkennedy12/web-app.git'
             }
         }
 
