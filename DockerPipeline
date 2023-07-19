@@ -10,7 +10,7 @@ pipeline {
         stage('Git Clone') {
             steps {
                 // Clone the Git repository
-                git branch: 'main', url: 'https://github.com/johnkennedy12/web-app.git'
+                git branch: 'master', url: 'https://github.com/johnkennedy12/web-app.git'
             }
         }
 
